@@ -404,8 +404,7 @@ def render_review_tab(df, groups_config) -> None:
                 mp_lines = []
                 for mp_col in group.get("marketplace_columns", []):
                     mp_val = format_cell_value(row.get(mp_col))
-                    if mp_val != "—":
-                        mp_lines.append(f"<div class='marketplace-value'>{mp_col}: {mp_val}</div>")
+                    mp_lines.append(f"<div class='marketplace-value'>{mp_col}: {mp_val}</div>")
 
                 st.markdown(
                     f"<div class='{card_class}'>"

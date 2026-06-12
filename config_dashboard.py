@@ -22,7 +22,4 @@ PREFETCH_WINDOW = 2
 IMAGE_CACHE_MAX_SIZE = 50
 IMAGE_DOWNLOAD_TIMEOUT = 10
 
-GROUP_DISPLAY_NAMES = {
-    "Sleeve_Length_Fit": "Sleeve / Length / Fit",
-    "Gender_Category": "Gender / Category",
-}
+GROUP_DISPLAY_NAMES: dict[str, str] = {}

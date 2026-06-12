@@ -97,34 +97,15 @@ groups:
       - Myntra Hemline
       - Ajio *Hemline
 
-  Sleeve_Length_Fit:
+  Occasion:
     brand_columns:
-      - Brand Sleeve Length
-      - Brand Sleeve Style
-      - Brand Length
-      - Brand Brand Fit
-      - Brand Generic Fit
+      - Brand Occasion
     marketplace_columns:
-      - Amazon Sleeve Type
-      - Flipkart Sleeve
-      - Ajio *Sleeve
-      - Myntra Sleeve Length
-      - Tata Cliq Sleeve(Refer LOV List)
-      - Nykaa Sleeve length Type
-      - Amazon Fit Type
-      - Flipkart Fit
-      - Ajio Fit
-      - Myntra Brand Fit Name
-      - Tata Cliq Brand Fit Name
-      - Nykaa Fit
-      - Myntra Fit
-      - Tata Cliq Fit(Refer LOV List)
-      - Amazon Item Length Description
-      - Flipkart Shirt Length
-      - Ajio Length
-      - Myntra Length
-      - Tata Cliq Length
-      - Myntra Sleeve Styling
+      - Amazon Occasion
+      - Flipkart Occasion
+      - Myntra Occasion
+      - Tata Cliq Occasion(Refer LOV List)
+      - Nykaa Occasion
 
   Material:
     brand_columns:
@@ -143,26 +124,3 @@ groups:
       - Tata Cliq Fabric
       - Ajio Fabric Detail
       - Myntra Weave Pattern
-
-  Gender_Category:
-    brand_columns:
-      - Brand Gender
-      - Brand Category
-      - Brand Occasion
-      - Brand Style Type
-      - Brand Product Type
-      - Brand Ethnicity
-    marketplace_columns:
-      - Amazon Target Gender
-      - Flipkart Ideal For
-      - Myntra AgeGroup
-      - Tata Cliq Age Band
-      - Nykaa Gender
-      - Amazon Department Name
-      - Amazon Product Category
-      - Brand Occasion
-      - Amazon Occasion
-      - Flipkart Occasion
-      - Myntra Occasion
-      - Tata Cliq Occasion(Refer LOV List)
-      - Nykaa Occasion
