@@ -1,0 +1,168 @@
+# Pipeline module groups for attribute review.
+# Each group has scorable brand columns and related marketplace columns for context.
+
+groups:
+  Collar:
+    brand_columns:
+      - Brand Collar
+    marketplace_columns:
+      - Amazon Collar Style
+      - Flipkart Collar
+      - Myntra Collar
+      - Ajio *Collar
+      - Tata Cliq Neck/Collar (Refer LOV List)
+      - Nykaa Neckline
+
+  Color:
+    brand_columns:
+      - Brand Color
+      - Brand Additional Color
+    marketplace_columns:
+      - Ajio *Primary Color
+      - Ajio *Color Family
+      - Ajio Secondary Color
+      - Ajio Color Shade
+      - Myntra Prominent Colour
+      - Myntra Brand Colour (Remarks)
+      - Myntra Second Prominent Colour
+      - Myntra Third Prominent Colour
+      - Tata Cliq Color Family (Refer LOV List)
+      - Tata Cliq Color
+      - Flipkart Brand Color
+      - Flipkart Color
+      - Flipkart Secondary Color
+      - Nykaa Color
+      - Amazon Color
+      - Amazon Color Map
+
+  Pattern:
+    brand_columns:
+      - Brand Pattern
+      - Brand Pattern Details
+      - Brand Print Coverage
+    marketplace_columns:
+      - Amazon Pattern
+      - Flipkart Pattern
+      - Flipkart Pattern/Print Type
+      - Myntra Print or Pattern Type
+      - Myntra Pattern
+      - Ajio *Pattern
+      - Tata Cliq Pattern (Refer LOV List)
+      - Nykaa Pattern
+
+  Pocket:
+    brand_columns:
+      - Brand Type of Pocket
+      - Brand No of Pockets
+      - Brand Pocket Placement
+    marketplace_columns:
+      - Tata Cliq Pocket
+      - Amazon Pocket Description
+      - Amazon Number of Pockets
+      - Flipkart Pocket
+      - Nykaa Pocket Description
+      - Myntra Pocket Type
+      - Myntra Number of Pockets
+
+  Closure:
+    brand_columns:
+      - Brand Closure Type
+    marketplace_columns:
+      - Amazon Closure Type
+      - Flipkart Closure
+      - Nykaa Closure
+
+  Placket:
+    brand_columns:
+      - Brand Placket Length
+      - Brand Placket
+    marketplace_columns:
+      - Myntra Placket Length
+      - Myntra Placket
+
+  Cuff:
+    brand_columns:
+      - Brand Cuffs
+    marketplace_columns:
+      - Amazon Cuff
+      - Myntra Cuff
+
+  Hemline:
+    brand_columns:
+      - Brand Hemline
+      - Brand Hood
+    marketplace_columns:
+      - Amazon Hemline Form
+      - Flipkart Hemline
+      - Myntra Hemline
+      - Ajio *Hemline
+
+  Sleeve_Length_Fit:
+    brand_columns:
+      - Brand Sleeve Length
+      - Brand Sleeve Style
+      - Brand Length
+      - Brand Brand Fit
+      - Brand Generic Fit
+    marketplace_columns:
+      - Amazon Sleeve Type
+      - Flipkart Sleeve
+      - Ajio *Sleeve
+      - Myntra Sleeve Length
+      - Tata Cliq Sleeve(Refer LOV List)
+      - Nykaa Sleeve length Type
+      - Amazon Fit Type
+      - Flipkart Fit
+      - Ajio Fit
+      - Myntra Brand Fit Name
+      - Tata Cliq Brand Fit Name
+      - Nykaa Fit
+      - Myntra Fit
+      - Tata Cliq Fit(Refer LOV List)
+      - Amazon Item Length Description
+      - Flipkart Shirt Length
+      - Ajio Length
+      - Myntra Length
+      - Tata Cliq Length
+      - Myntra Sleeve Styling
+
+  Material:
+    brand_columns:
+      - Brand Material
+      - Brand Generic Fabric Name
+      - Brand Yarn Details
+    marketplace_columns:
+      - Amazon Material
+      - Nykaa Material
+      - Myntra Fabric
+      - Tata Cliq Fabric Family (Refer LOV List)
+      - Ajio Fabric Type
+      - Flipkart Brand Fabric
+      - Amazon Fabric Type
+      - Myntra materialCareDescription
+      - Tata Cliq Fabric
+      - Ajio Fabric Detail
+      - Myntra Weave Pattern
+
+  Gender_Category:
+    brand_columns:
+      - Brand Gender
+      - Brand Category
+      - Brand Occasion
+      - Brand Style Type
+      - Brand Product Type
+      - Brand Ethnicity
+    marketplace_columns:
+      - Amazon Target Gender
+      - Flipkart Ideal For
+      - Myntra AgeGroup
+      - Tata Cliq Age Band
+      - Nykaa Gender
+      - Amazon Department Name
+      - Amazon Product Category
+      - Brand Occasion
+      - Amazon Occasion
+      - Flipkart Occasion
+      - Myntra Occasion
+      - Tata Cliq Occasion(Refer LOV List)
+      - Nykaa Occasion
