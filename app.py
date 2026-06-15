@@ -11,11 +11,13 @@ import streamlit.components.v1 as components
 from config_dashboard import (
     DEFAULT_SELECTED_GROUPS,
     DEFAULT_SELECTED_IMAGES,
-    IMAGE_OPTIONS,
+    IMAGE_COLUMN_CANDIDATES,
     PREFETCH_WINDOW,
     STYLES_PATH,
 )
-from review_utils import all_attributes_reviewed, is_attribute_reviewed
+from brand_filter import filter_brand_column
+from stylecode_utils import get_row_votes, normalize_stylecode
+from review_checks import all_attributes_reviewed, is_attribute_reviewed
 from review_store import (
     count_reviewed_for_attributes,
     default_reviews_path,
@@ -28,16 +30,24 @@ from review_store import (
 )
 from data_loader import (
     all_group_keys,
-    filter_row_indices,
+    filter_by_attribute_values,
     format_cell_value,
     get_row_by_index,
     get_stylecode,
     group_display_name,
+    jump_label,
     load_attribute_groups,
     resolve_group_columns,
+    resolve_jump_query,
+    unique_brand_values,
 )
 from excel_io import read_excel_bytes
-from image_cache import get_image_cache, prefetch_window, render_image_panel
+from image_cache import (
+    get_image_cache,
+    prefetch_window,
+    render_image_panel,
+    resolve_image_url,
+)
 from analytics import render_analytics_tab
 
 
@@ -58,6 +68,8 @@ def init_session_state() -> None:
         "uploaded_bytes": None,
         "reviews_loaded": False,
         "confirm_reset": False,
+        "jump_message": "",
+        "attribute_filters": {},
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -111,7 +123,7 @@ def count_groups_reviewed_on_row(
     stylecode: str,
     group_keys: list[str],
 ) -> int:
-    row_votes = votes.get(stylecode, {})
+    row_votes = get_row_votes(votes, stylecode)
     return sum(1 for g in group_keys if is_attribute_reviewed(row_votes, g))
 
 
@@ -119,51 +131,95 @@ def note_input_key(stylecode: str, group_key: str) -> str:
     return f"note_{stylecode}_{group_key}"
 
 
-def on_prev(stylecodes: list[str]) -> None:
+def on_prev(max_idx: int) -> None:
     st.session_state.row_idx = max(0, st.session_state.row_idx - 1)
-    sync_stylecode_selector(stylecodes)
 
 
-def on_next(max_idx: int, stylecodes: list[str]) -> None:
+def on_next(max_idx: int) -> None:
     st.session_state.row_idx = min(max_idx, st.session_state.row_idx + 1)
-    sync_stylecode_selector(stylecodes)
 
 
-def advance_row(max_idx: int, only_unreviewed: bool = False) -> None:
-    if max_idx < 0:
+def find_next_unreviewed_nav_pos(
+    df,
+    nav_indices: list[int],
+    start_pos: int,
+    votes: dict,
+    group_keys: list[str],
+) -> int | None:
+    for pos in range(max(0, start_pos), len(nav_indices)):
+        idx = nav_indices[pos]
+        stylecode = get_stylecode(df.iloc[idx])
+        if not all_attributes_reviewed(votes, stylecode, group_keys):
+            return pos
+    return None
+
+
+def on_jump_go(df, nav_indices: list[int]) -> None:
+    query = str(st.session_state.get("jump_search", "")).strip()
+    st.session_state.jump_message = ""
+    if not query:
         return
-    if only_unreviewed:
-        st.session_state.row_idx = min(st.session_state.row_idx, max_idx)
+    matches = resolve_jump_query(df, query)
+    matches = [i for i in matches if i in nav_indices]
+    if len(matches) == 1:
+        st.session_state.row_idx = nav_indices.index(matches[0])
+    elif not matches:
+        st.session_state.jump_message = "No matching row found."
     else:
-        st.session_state.row_idx = min(max_idx, st.session_state.row_idx + 1)
+        st.session_state.jump_match_options = matches
+        st.session_state.jump_message = f"Found {len(matches)} matches — pick one below."
 
 
-def sync_stylecode_selector(stylecodes: list[str]) -> None:
-    """Keep jump selectbox aligned with row_idx after programmatic navigation."""
-    if not stylecodes:
-        return
-    idx = min(max(st.session_state.row_idx, 0), len(stylecodes) - 1)
-    st.session_state._jump_sync_programmatic = True
-    st.session_state.jump_stylecode = stylecodes[idx]
+def on_jump_select() -> None:
+    nav_indices = st.session_state.get("_nav_indices", [])
+    selected_data_idx = st.session_state.jump_row_select
+    if selected_data_idx in nav_indices:
+        st.session_state.row_idx = nav_indices.index(selected_data_idx)
+    st.session_state.jump_match_options = None
+    st.session_state.jump_message = ""
 
 
-def ensure_stylecode_selector(stylecodes: list[str]) -> None:
-    """Initialize jump selectbox when missing or out of sync with row_idx."""
-    if not stylecodes:
-        return
-    idx = min(max(st.session_state.row_idx, 0), len(stylecodes) - 1)
-    expected = stylecodes[idx]
-    current = st.session_state.get("jump_stylecode")
-    if current not in stylecodes or current != expected:
-        sync_stylecode_selector(stylecodes)
+def _advance_after_review(df, nav_indices: list[int], group_keys: list[str], stylecode: str) -> bool:
+    """Advance to the next row once every selected group has a vote or note."""
+    if not group_keys:
+        return False
+    if not all_attributes_reviewed(st.session_state.votes, stylecode, group_keys):
+        return False
+
+    max_pos = len(nav_indices) - 1
+    if max_pos < 0:
+        return False
+
+    if st.session_state.only_unreviewed:
+        next_pos = find_next_unreviewed_nav_pos(
+            df,
+            nav_indices,
+            st.session_state.row_idx + 1,
+            st.session_state.votes,
+            group_keys,
+        )
+        if next_pos is not None:
+            st.session_state.row_idx = next_pos
+            return True
+        if st.session_state.row_idx < max_pos:
+            st.session_state.row_idx += 1
+            return True
+        return False
+
+    if st.session_state.row_idx < max_pos:
+        st.session_state.row_idx += 1
+        return True
+    return False
 
 
 def on_note_saved(
     stylecode: str,
     group_key: str,
     df,
+    nav_indices: list[int],
     group_keys: list[str],
 ) -> None:
+    nav_indices = st.session_state.get("_nav_indices") or nav_indices
     key = note_input_key(stylecode, group_key)
     note_val = str(st.session_state.get(key, "")).strip()
     if not note_val:
@@ -177,7 +233,7 @@ def on_note_saved(
         note=note_val,
     )
     persist_reviews()
-    _advance_after_review(df, group_keys, stylecode)
+    _advance_after_review(df, nav_indices, group_keys, stylecode)
 
 
 def on_vote_click(
@@ -185,34 +241,94 @@ def on_vote_click(
     group_key: str,
     vote: str,
     df,
+    nav_indices: list[int],
     group_keys: list[str],
 ) -> None:
+    nav_indices = st.session_state.get("_nav_indices") or nav_indices
     key = note_input_key(stylecode, group_key)
     note = str(st.session_state.get(key, get_note(st.session_state.votes, stylecode, group_key)))
     record_vote(st.session_state.votes, stylecode, group_key, vote, note=note)
     persist_reviews()
-    _advance_after_review(df, group_keys, stylecode)
+    _advance_after_review(df, nav_indices, group_keys, stylecode)
 
 
-def _advance_after_review(df, group_keys: list[str], stylecode: str) -> bool:
-    if not all_attributes_reviewed(st.session_state.votes, stylecode, group_keys):
-        return False
+def render_attribute_vote_panel(
+    df,
+    nav_indices: list[int],
+    resolved_groups: dict,
+    group_keys: list[str],
+    stylecode: str,
+    row,
+) -> None:
+    """Render attribute cards and vote controls for the current row."""
+    if not group_keys:
+        st.warning("Select at least one attribute group to review.")
+        return
 
-    only_unreviewed = st.session_state.only_unreviewed
-    all_indices = list(range(len(df)))
-    row_indices = filter_row_indices(
-        df,
-        all_indices,
-        st.session_state.votes,
-        group_keys,
-        only_unreviewed,
+    st.markdown(
+        f'<p class="groups-reviewed-hint">'
+        f"Groups reviewed: {count_groups_reviewed_on_row(st.session_state.votes, stylecode, group_keys)}"
+        f" / {len(group_keys)}</p>",
+        unsafe_allow_html=True,
     )
-    max_idx = len(row_indices) - 1
-    advance_row(max_idx, only_unreviewed=only_unreviewed)
-    if row_indices:
-        stylecodes = [get_stylecode(df.iloc[i]) for i in row_indices]
-        sync_stylecode_selector(stylecodes)
-    return True
+    for group_key in group_keys:
+        group = resolved_groups[group_key]
+        title = group_display_name(group_key)
+        vote = get_vote(st.session_state.votes, stylecode, group_key)
+        existing_note = get_note(st.session_state.votes, stylecode, group_key)
+
+        card_class = "attr-card"
+        if vote == "like":
+            card_class += " voted-like"
+        elif vote == "dislike":
+            card_class += " voted-dislike"
+
+        brand_lines = []
+        for brand_col in group.get("brand_columns", []):
+            brand_val = format_cell_value(row.get(brand_col))
+            brand_lines.append(f"<div class='brand-value'>{brand_col}: {brand_val}</div>")
+
+        mp_lines = []
+        for mp_col in group.get("marketplace_columns", []):
+            mp_val = format_cell_value(row.get(mp_col))
+            mp_lines.append(f"<div class='marketplace-value'>{mp_col}: {mp_val}</div>")
+
+        st.markdown(
+            f"<div class='{card_class}'>"
+            f"<h4>{title}</h4>"
+            f"{''.join(brand_lines)}"
+            f"{''.join(mp_lines)}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        btn_like, btn_dislike = st.columns(2)
+        with btn_like:
+            st.button(
+                "👍 Like",
+                key=f"like_{stylecode}_{group_key}",
+                use_container_width=True,
+                on_click=on_vote_click,
+                args=(stylecode, group_key, "like", df, nav_indices, group_keys),
+            )
+        with btn_dislike:
+            st.button(
+                "👎 Dislike",
+                key=f"dislike_{stylecode}_{group_key}",
+                use_container_width=True,
+                on_click=on_vote_click,
+                args=(stylecode, group_key, "dislike", df, nav_indices, group_keys),
+            )
+
+        st.text_input(
+            "Note",
+            value=existing_note,
+            key=note_input_key(stylecode, group_key),
+            label_visibility="collapsed",
+            placeholder="Optional note…",
+            on_change=on_note_saved,
+            args=(stylecode, group_key, df, nav_indices, group_keys),
+        )
 
 
 def inject_keyboard_nav() -> None:
@@ -278,7 +394,7 @@ def render_review_tab(df, groups_config) -> None:
     with c_img:
         st.session_state.selected_images = st.multiselect(
             "Images (up to 2)",
-            options=list(IMAGE_OPTIONS.keys()),
+            options=list(IMAGE_COLUMN_CANDIDATES.keys()),
             default=st.session_state.selected_images[:2],
             max_selections=2,
             key="image_multiselect",
@@ -305,28 +421,62 @@ def render_review_tab(df, groups_config) -> None:
     )
     group_keys = reviewable_group_keys(st.session_state.selected_groups, resolved_groups)
 
-    row_indices = list(range(len(df)))
-    row_indices = filter_row_indices(
+    filter_sig = str({k: st.session_state.get(f"attr_filter_{k}", []) for k in group_keys})
+    if st.session_state.get("_attr_filter_sig") != filter_sig:
+        st.session_state._attr_filter_sig = filter_sig
+        st.session_state.row_idx = 0
+
+    if group_keys:
+        with st.expander("Filter by attribute values", expanded=False):
+            filter_cols = st.columns(min(len(group_keys), 3) or 1)
+            for i, group_key in enumerate(group_keys):
+                brand_col = filter_brand_column(
+                    group_key, resolved_groups[group_key].get("brand_columns", [])
+                )
+                if not brand_col:
+                    continue
+                options = unique_brand_values(df, brand_col)
+                if not options:
+                    continue
+                with filter_cols[i % len(filter_cols)]:
+                    st.multiselect(
+                        group_display_name(group_key),
+                        options=options,
+                        key=f"attr_filter_{group_key}",
+                    )
+
+    attribute_filters = {
+        group_key: st.session_state.get(f"attr_filter_{group_key}", [])
+        for group_key in group_keys
+    }
+    st.session_state.attribute_filters = attribute_filters
+
+    nav_indices = filter_by_attribute_values(
         df,
-        row_indices,
-        st.session_state.votes,
-        group_keys,
-        st.session_state.only_unreviewed,
+        list(range(len(df))),
+        resolved_groups,
+        attribute_filters,
     )
 
-    if st.session_state.row_idx >= len(row_indices):
-        st.session_state.row_idx = max(0, len(row_indices) - 1)
+    if not nav_indices:
+        st.warning("No rows match the selected attribute filters.")
+        return
 
-    current_list_idx = st.session_state.row_idx
-    data_idx = row_indices[current_list_idx]
+    st.session_state._nav_indices = nav_indices
+
+    max_row_pos = len(nav_indices) - 1
+    st.session_state.row_idx = max(0, min(st.session_state.row_idx, max_row_pos))
+    data_idx = nav_indices[st.session_state.row_idx]
     row = get_row_by_index(df, data_idx)
     stylecode = get_stylecode(row)
+
+    nav_stylecodes = [get_stylecode(df.iloc[i]) for i in nav_indices]
 
     prefetch_window(
         df,
         data_idx,
         PREFETCH_WINDOW,
-        IMAGE_OPTIONS,
+        IMAGE_COLUMN_CANDIDATES,
         st.session_state.selected_images,
         cache,
     )
@@ -334,8 +484,21 @@ def render_review_tab(df, groups_config) -> None:
     with c_prog:
         reviewed = count_reviewed_for_attributes(
             st.session_state.votes,
-            [get_stylecode(df.iloc[i]) for i in row_indices],
+            nav_stylecodes,
             group_keys,
+        )
+        unreviewed = (
+            sum(
+                1
+                for i in nav_indices
+                if not all_attributes_reviewed(
+                    st.session_state.votes,
+                    get_stylecode(df.iloc[i]),
+                    group_keys,
+                )
+            )
+            if group_keys
+            else len(nav_indices)
         )
         groups_done = count_groups_reviewed_on_row(st.session_state.votes, stylecode, group_keys)
         groups_hint = ""
@@ -343,10 +506,15 @@ def render_review_tab(df, groups_config) -> None:
             groups_hint = (
                 f'<br>Groups reviewed on this StyleCode: {groups_done} / {len(group_keys)}'
             )
+        unreviewed_hint = ""
+        if group_keys:
+            unreviewed_hint = f"<br>Unreviewed: {unreviewed}"
+        total_label = len(nav_indices) if len(nav_indices) != len(df) else len(df)
         st.markdown(
-            f'<p class="progress-text">Row {current_list_idx + 1} / {len(row_indices)}<br>'
+            f'<p class="progress-text">Row {st.session_state.row_idx + 1} / {total_label}'
+            f" (dataset row {data_idx + 1})<br>"
             f"StyleCode: <strong>{stylecode}</strong><br>"
-            f"Fully reviewed: {reviewed} / {len(row_indices)}{groups_hint}</p>",
+            f"Fully reviewed: {reviewed} / {total_label}{unreviewed_hint}{groups_hint}</p>",
             unsafe_allow_html=True,
         )
     st.markdown('<div class="sticky-controls-end"></div>', unsafe_allow_html=True)
@@ -357,12 +525,7 @@ def render_review_tab(df, groups_config) -> None:
         st.markdown('<div class="image-panel-marker"></div>', unsafe_allow_html=True)
         urls_by_label: list[tuple[str, str | None]] = []
         for label in st.session_state.selected_images[:2]:
-            col_name = IMAGE_OPTIONS.get(label)
-            url = None
-            if col_name and col_name in row.index:
-                raw = row[col_name]
-                if raw is not None and str(raw).strip().lower() not in ("", "nan"):
-                    url = str(raw).strip()
+            url = resolve_image_url(row, IMAGE_COLUMN_CANDIDATES.get(label, []))
             urls_by_label.append((label, url))
 
         def placeholder(msg: str) -> None:
@@ -375,109 +538,59 @@ def render_review_tab(df, groups_config) -> None:
 
     with right_col:
         st.markdown('<div class="attribute-panel-marker"></div>', unsafe_allow_html=True)
-        if not group_keys:
-            st.warning("Select at least one attribute group to review.")
-        else:
-            st.markdown(
-                f'<p class="groups-reviewed-hint">'
-                f"Groups reviewed: {count_groups_reviewed_on_row(st.session_state.votes, stylecode, group_keys)}"
-                f" / {len(group_keys)}</p>",
-                unsafe_allow_html=True,
-            )
-            for group_key in group_keys:
-                group = resolved_groups[group_key]
-                title = group_display_name(group_key)
-                vote = get_vote(st.session_state.votes, stylecode, group_key)
-                existing_note = get_note(st.session_state.votes, stylecode, group_key)
-
-                card_class = "attr-card"
-                if vote == "like":
-                    card_class += " voted-like"
-                elif vote == "dislike":
-                    card_class += " voted-dislike"
-
-                brand_lines = []
-                for brand_col in group.get("brand_columns", []):
-                    brand_val = format_cell_value(row.get(brand_col))
-                    brand_lines.append(f"<div class='brand-value'>{brand_col}: {brand_val}</div>")
-
-                mp_lines = []
-                for mp_col in group.get("marketplace_columns", []):
-                    mp_val = format_cell_value(row.get(mp_col))
-                    mp_lines.append(f"<div class='marketplace-value'>{mp_col}: {mp_val}</div>")
-
-                st.markdown(
-                    f"<div class='{card_class}'>"
-                    f"<h4>{title}</h4>"
-                    f"{''.join(brand_lines)}"
-                    f"{''.join(mp_lines)}"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-
-                btn_like, btn_dislike = st.columns(2)
-                with btn_like:
-                    st.button(
-                        "👍 Like",
-                        key=f"like_{stylecode}_{group_key}",
-                        use_container_width=True,
-                        on_click=on_vote_click,
-                        args=(stylecode, group_key, "like", df, group_keys),
-                    )
-                with btn_dislike:
-                    st.button(
-                        "👎 Dislike",
-                        key=f"dislike_{stylecode}_{group_key}",
-                        use_container_width=True,
-                        on_click=on_vote_click,
-                        args=(stylecode, group_key, "dislike", df, group_keys),
-                    )
-
-                st.text_input(
-                    "Note",
-                    value=existing_note,
-                    key=note_input_key(stylecode, group_key),
-                    label_visibility="collapsed",
-                    placeholder="Optional note…",
-                    on_change=on_note_saved,
-                    args=(stylecode, group_key, df, group_keys),
-                )
-
-        stylecodes = [get_stylecode(df.iloc[i]) for i in row_indices]
-        ensure_stylecode_selector(stylecodes)
-
-        def _on_jump() -> None:
-            if st.session_state.pop("_jump_sync_programmatic", False):
-                return
-            selected = st.session_state.jump_stylecode
-            if selected in stylecodes:
-                st.session_state.row_idx = stylecodes.index(selected)
+        render_attribute_vote_panel(df, nav_indices, resolved_groups, group_keys, stylecode, row)
 
         st.markdown('<div class="review-nav-divider"></div>', unsafe_allow_html=True)
         nav_prev, nav_next = st.columns(2)
-        max_row_idx = len(row_indices) - 1
         with nav_prev:
             st.markdown('<div class="review-nav-marker"></div>', unsafe_allow_html=True)
             st.button(
                 "← Previous",
                 on_click=on_prev,
-                args=(stylecodes,),
-                disabled=current_list_idx <= 0,
+                args=(max_row_pos,),
+                disabled=st.session_state.row_idx <= 0,
                 use_container_width=True,
             )
         with nav_next:
             st.button(
                 "Next →",
                 on_click=on_next,
-                args=(max_row_idx, stylecodes),
-                disabled=current_list_idx >= max_row_idx,
+                args=(max_row_pos,),
+                disabled=st.session_state.row_idx >= max_row_pos,
                 use_container_width=True,
             )
+
+        jump_col1, jump_col2 = st.columns([4, 1])
+        with jump_col1:
+            st.text_input(
+                "Jump by row # or StyleCode",
+                key="jump_search",
+                placeholder="e.g. 42, #100, or ABC123",
+            )
+        with jump_col2:
+            st.button(
+                "Go",
+                key="jump_go_btn",
+                on_click=on_jump_go,
+                args=(df, nav_indices),
+                use_container_width=True,
+            )
+
+        if st.session_state.get("jump_message"):
+            st.caption(st.session_state.jump_message)
+
+        jump_options = st.session_state.get("jump_match_options") or nav_indices
+        jump_options = [i for i in jump_options if i in nav_indices]
+        if not st.session_state.get("jump_match_options"):
+            st.session_state.jump_row_select = data_idx
+        elif st.session_state.jump_row_select not in jump_options:
+            st.session_state.jump_row_select = jump_options[0]
         st.selectbox(
-            "Jump to StyleCode",
-            options=stylecodes,
-            key="jump_stylecode",
-            on_change=_on_jump,
+            "Jump to row",
+            options=jump_options,
+            format_func=lambda i: jump_label(df, i),
+            key="jump_row_select",
+            on_change=on_jump_select,
         )
         st.caption("Use ← → keys to navigate")
 

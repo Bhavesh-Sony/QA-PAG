@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from config_dashboard import STYLECODE_COLUMN
+from stylecode_utils import normalize_stylecode
 
 
 @st.cache_data(show_spinner="Loading Excel data…")
@@ -18,5 +19,5 @@ def read_excel_bytes(file_digest: str, file_bytes: bytes) -> pd.DataFrame:
     if STYLECODE_COLUMN not in df.columns:
         raise ValueError(f"Expected column '{STYLECODE_COLUMN}' in Excel file.")
 
-    df[STYLECODE_COLUMN] = df[STYLECODE_COLUMN].astype(str)
+    df[STYLECODE_COLUMN] = df[STYLECODE_COLUMN].map(normalize_stylecode)
     return df

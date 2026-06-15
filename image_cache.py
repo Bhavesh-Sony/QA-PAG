@@ -9,7 +9,7 @@ from typing import Callable
 import requests
 import streamlit as st
 
-from config_dashboard import IMAGE_CACHE_MAX_SIZE, IMAGE_DOWNLOAD_TIMEOUT
+from config_dashboard import IMAGE_CACHE_MAX_SIZE, IMAGE_DOWNLOAD_TIMEOUT, IMAGE_COLUMN_CANDIDATES
 
 
 class ImageCache:
@@ -76,10 +76,21 @@ def get_image_cache() -> ImageCache:
     return ImageCache()
 
 
+def resolve_image_url(row, candidates: list[str]) -> str | None:
+    """Return the first non-empty image URL from candidate column names."""
+    for col in candidates:
+        if col not in row.index:
+            continue
+        raw = row.get(col)
+        if raw is not None and str(raw).strip().lower() not in ("", "nan"):
+            return str(raw).strip()
+    return None
+
+
 def collect_urls_for_rows(
     df,
     row_indices: list[int],
-    image_column_map: dict[str, str],
+    image_candidates_map: dict[str, list[str]],
     selected_image_labels: list[str],
 ) -> list[str]:
     urls: list[str] = []
@@ -88,12 +99,10 @@ def collect_urls_for_rows(
             continue
         row = df.iloc[idx]
         for label in selected_image_labels:
-            col = image_column_map.get(label)
-            if not col:
-                continue
-            url = row.get(col)
-            if url and str(url).strip() and str(url).lower() != "nan":
-                urls.append(str(url).strip())
+            candidates = image_candidates_map.get(label, [])
+            url = resolve_image_url(row, candidates)
+            if url:
+                urls.append(url)
     return urls
 
 
@@ -101,14 +110,14 @@ def prefetch_window(
     df,
     center_idx: int,
     window: int,
-    image_column_map: dict[str, str],
+    image_candidates_map: dict[str, list[str]],
     selected_image_labels: list[str],
     cache: ImageCache | None = None,
 ) -> None:
     if cache is None:
         cache = get_image_cache()
     indices = list(range(max(0, center_idx - window), min(len(df), center_idx + window + 1)))
-    urls = collect_urls_for_rows(df, indices, image_column_map, selected_image_labels)
+    urls = collect_urls_for_rows(df, indices, image_candidates_map, selected_image_labels)
     cache.prefetch(urls)
 
 

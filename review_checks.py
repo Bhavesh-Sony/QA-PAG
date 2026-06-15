@@ -1,4 +1,11 @@
-"""Pure helpers for review completion checks (no dashboard imports)."""
+"""Review completion checks (no Streamlit imports)."""
+
+__all__ = [
+    "is_attribute_reviewed",
+    "all_attributes_reviewed",
+]
+
+from stylecode_utils import get_row_votes
 
 
 def is_attribute_reviewed(row_votes: dict[str, dict[str, str]], attribute: str) -> bool:
@@ -15,5 +22,5 @@ def all_attributes_reviewed(
 ) -> bool:
     if not attributes:
         return False
-    row_votes = votes.get(stylecode, {})
+    row_votes = get_row_votes(votes, stylecode)
     return all(is_attribute_reviewed(row_votes, attr) for attr in attributes)

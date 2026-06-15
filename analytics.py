@@ -8,8 +8,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from data_loader import load_attribute_groups
-from review_store import default_reviews_path, save_reviews
+from data_loader import get_stylecode, load_attribute_groups
+from review_store import count_reviewed_for_attributes, default_reviews_path, save_reviews
 
 
 def compute_attribute_accuracy(
@@ -88,6 +88,22 @@ def compute_overall_accuracy(votes_df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def compute_row_completion(
+    votes: dict[str, dict[str, dict[str, str]]],
+    df: pd.DataFrame,
+    attributes: list[str],
+) -> dict[str, int]:
+    if not attributes:
+        return {"total_rows": len(df), "fully_reviewed": 0, "unreviewed": len(df)}
+    all_stylecodes = [get_stylecode(df.iloc[i]) for i in range(len(df))]
+    fully_reviewed = count_reviewed_for_attributes(votes, all_stylecodes, attributes)
+    return {
+        "total_rows": len(df),
+        "fully_reviewed": fully_reviewed,
+        "unreviewed": len(df) - fully_reviewed,
+    }
+
+
 def render_analytics_tab(
     votes: dict[str, dict[str, dict[str, str]]],
     df: pd.DataFrame,
@@ -96,7 +112,15 @@ def render_analytics_tab(
     votes_df = votes_to_dataframe_fn(votes)
     overall = compute_overall_accuracy(votes_df)
     groups_config = load_attribute_groups()
+    all_group_keys = list(groups_config.keys())
+    completion = compute_row_completion(votes, df, all_group_keys)
     attr_df = compute_attribute_accuracy(votes_df, df, groups_config=groups_config)
+
+    st.subheader("Review completion")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total rows", completion["total_rows"])
+    c2.metric("Fully reviewed (all groups)", completion["fully_reviewed"])
+    c3.metric("Unreviewed", completion["unreviewed"])
 
     st.subheader("Overall accuracy")
     m1, m2, m3, m4 = st.columns(4)

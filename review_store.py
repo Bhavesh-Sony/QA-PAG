@@ -10,7 +10,21 @@ from typing import Any
 import pandas as pd
 
 from config_dashboard import DATA_DIR
-from review_utils import all_attributes_reviewed, is_attribute_reviewed
+from stylecode_utils import get_row_votes, normalize_stylecode
+from review_checks import all_attributes_reviewed, is_attribute_reviewed
+
+
+def normalize_votes_keys(votes: dict[str, dict[str, dict[str, str]]]) -> dict[str, dict[str, dict[str, str]]]:
+    """Merge vote entries under canonical StyleCode keys."""
+    normalized: dict[str, dict[str, dict[str, str]]] = {}
+    for stylecode, attr_votes in votes.items():
+        key = normalize_stylecode(stylecode)
+        if not key:
+            continue
+        if key not in normalized:
+            normalized[key] = {}
+        normalized[key].update(attr_votes)
+    return normalized
 
 
 def ensure_data_dir() -> Path:
@@ -31,6 +45,7 @@ def load_reviews(path: Path) -> dict[str, Any]:
         data["votes"] = {}
     if "metadata" not in data:
         data["metadata"] = {}
+    data["votes"] = normalize_votes_keys(data.get("votes", {}))
     return data
 
 
@@ -52,9 +67,10 @@ def record_vote(
     vote: str,
     note: str = "",
 ) -> None:
-    if stylecode not in votes:
-        votes[stylecode] = {}
-    votes[stylecode][attribute] = {
+    key = normalize_stylecode(stylecode)
+    if key not in votes:
+        votes[key] = {}
+    votes[key][attribute] = {
         "vote": vote,
         "note": note,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -62,14 +78,14 @@ def record_vote(
 
 
 def get_vote(votes: dict[str, dict[str, dict[str, str]]], stylecode: str, attribute: str) -> str | None:
-    entry = votes.get(stylecode, {}).get(attribute)
+    entry = get_row_votes(votes, stylecode).get(attribute)
     if not entry:
         return None
     return entry.get("vote")
 
 
 def get_note(votes: dict[str, dict[str, dict[str, str]]], stylecode: str, attribute: str) -> str:
-    entry = votes.get(stylecode, {}).get(attribute)
+    entry = get_row_votes(votes, stylecode).get(attribute)
     if not entry:
         return ""
     return entry.get("note", "") or ""
@@ -84,7 +100,7 @@ def count_reviewed_for_attributes(
         return 0
     count = 0
     for stylecode in stylecodes:
-        row_votes = votes.get(stylecode, {})
+        row_votes = get_row_votes(votes, stylecode)
         if all(is_attribute_reviewed(row_votes, attr) for attr in attributes):
             count += 1
     return count

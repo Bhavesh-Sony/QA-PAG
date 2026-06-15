@@ -9,11 +9,13 @@ STYLES_PATH = DASHBOARD_DIR / "styles.css"
 
 STYLECODE_COLUMN = "StyleCode"
 
-IMAGE_OPTIONS = {
-    "Front": "front_image",
-    "Collar": "collar",
-    "Cuff": "cuff_image",
+IMAGE_COLUMN_CANDIDATES: dict[str, list[str]] = {
+    "Front": ["front_image", "front_image_url", "front"],
+    "Collar": ["collar"],
+    "Cuff": ["cuff_image", "cuff", "cuff_hand", "cuff_image_url"],
 }
+
+IMAGE_OPTIONS = IMAGE_COLUMN_CANDIDATES
 
 DEFAULT_SELECTED_IMAGES = ["Front"]
 DEFAULT_SELECTED_GROUPS: list[str] = []
