@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
-import yaml
 
-from config_dashboard import ATTRIBUTE_GROUPS_PATH, GROUP_DISPLAY_NAMES, STYLECODE_COLUMN
+from config_dashboard import GROUP_DISPLAY_NAMES, STYLECODE_COLUMN
 from brand_filter import filter_brand_column
 from stylecode_utils import get_row_votes, normalize_stylecode
 from review_checks import all_attributes_reviewed, is_attribute_reviewed
@@ -27,16 +26,28 @@ __all__ = [
     "load_attribute_groups",
     "primary_brand_column",
     "resolve_group_columns",
+    "resolve_image_url",
     "resolve_jump_query",
     "scorable_attributes",
     "unique_brand_values",
 ]
 
 
+def resolve_image_url(row, candidates: list[str]) -> str | None:
+    """Return the first non-empty image URL from candidate column names."""
+    for col in candidates:
+        if col not in row.index:
+            continue
+        raw = row.get(col)
+        if raw is not None and str(raw).strip().lower() not in ("", "nan"):
+            return str(raw).strip()
+    return None
+
+
 def load_attribute_groups() -> dict[str, dict[str, list[str]]]:
-    with open(ATTRIBUTE_GROUPS_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return data.get("groups", {})
+    from cache_layer import load_attribute_groups_cached
+
+    return load_attribute_groups_cached()
 
 
 def group_display_name(group_key: str) -> str:

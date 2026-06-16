@@ -1,8 +1,5 @@
-[theme]
-primaryColor = "#2563eb"
-
 [server]
-headless = true
+fastReruns = true
 
-[browser]
-gatherUsageStats = false
+[runner]
+fastReruns = true

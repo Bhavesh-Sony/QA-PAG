@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from data_loader import get_stylecode, load_attribute_groups
-from review_store import count_reviewed_for_attributes, default_reviews_path, save_reviews
+from cache_layer import load_attribute_groups_cached
+from data_loader import get_stylecode
+from review_store import count_reviewed_for_attributes, default_reviews_path, save_reviews, votes_to_dataframe
 
 
 def compute_attribute_accuracy(
@@ -104,17 +106,40 @@ def compute_row_completion(
     }
 
 
+@st.cache_data(show_spinner=False)
+def compute_analytics_bundle(
+    digest: str,
+    votes_json: str,
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    """Cache analytics metrics keyed by dataset digest and votes snapshot."""
+    votes = json.loads(votes_json)
+    votes_df = votes_to_dataframe(votes)
+    groups_config = load_attribute_groups_cached()
+    all_group_keys = list(groups_config.keys())
+
+    return {
+        "votes_df": votes_df,
+        "overall": compute_overall_accuracy(votes_df),
+        "attr_df": compute_attribute_accuracy(votes_df, df, groups_config),
+        "all_group_keys": all_group_keys,
+    }
+
+
 def render_analytics_tab(
     votes: dict[str, dict[str, dict[str, str]]],
     df: pd.DataFrame,
-    votes_to_dataframe_fn,
+    digest: str,
 ) -> None:
-    votes_df = votes_to_dataframe_fn(votes)
-    overall = compute_overall_accuracy(votes_df)
-    groups_config = load_attribute_groups()
-    all_group_keys = list(groups_config.keys())
+    votes_json = json.dumps(votes, sort_keys=True, default=str)
+    bundle = compute_analytics_bundle(digest, votes_json, df)
+
+    votes_df = bundle["votes_df"]
+    overall = bundle["overall"]
+    groups_config = load_attribute_groups_cached()
+    all_group_keys = bundle["all_group_keys"]
     completion = compute_row_completion(votes, df, all_group_keys)
-    attr_df = compute_attribute_accuracy(votes_df, df, groups_config=groups_config)
+    attr_df = bundle["attr_df"]
 
     st.subheader("Review completion")
     c1, c2, c3 = st.columns(3)
@@ -186,6 +211,7 @@ def render_analytics_tab(
                     },
                 )
                 st.session_state.confirm_reset = False
+                st.session_state._last_persist_hash = None
                 st.rerun()
             if st.button("Cancel reset"):
                 st.session_state.confirm_reset = False

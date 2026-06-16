@@ -11,7 +11,7 @@ from config_dashboard import STYLECODE_COLUMN
 from stylecode_utils import normalize_stylecode
 
 
-@st.cache_data(show_spinner="Loading Excel data…")
+@st.cache_data(show_spinner=False)
 def read_excel_bytes(file_digest: str, file_bytes: bytes) -> pd.DataFrame:
     """Parse an uploaded workbook; file_digest is used only for cache invalidation."""
     df = pd.read_excel(BytesIO(file_bytes))

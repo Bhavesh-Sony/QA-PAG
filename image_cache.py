@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import html
 import threading
 from collections import OrderedDict
-from typing import Callable
 
 import requests
 import streamlit as st
 
 from config_dashboard import IMAGE_CACHE_MAX_SIZE, IMAGE_DOWNLOAD_TIMEOUT, IMAGE_COLUMN_CANDIDATES
+from data_loader import resolve_image_url
 
 
 class ImageCache:
@@ -70,21 +71,23 @@ class ImageCache:
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
 
+    def evict(self, urls: list[str]) -> None:
+        """Remove specific URLs from the cache so they are re-fetched next render."""
+        with self._lock:
+            for url in urls:
+                self._cache.pop(url, None)
+
+
+def _warm_urls_sync(cache: ImageCache, urls: list[str]) -> None:
+    """Synchronously fetch URLs not yet cached (uses get/fetch only)."""
+    for url in dict.fromkeys(urls):
+        if url and cache.get(url) is None:
+            cache.fetch(url)
+
 
 @st.cache_resource
-def get_image_cache() -> ImageCache:
+def get_image_cache(_version: int = 4) -> ImageCache:
     return ImageCache()
-
-
-def resolve_image_url(row, candidates: list[str]) -> str | None:
-    """Return the first non-empty image URL from candidate column names."""
-    for col in candidates:
-        if col not in row.index:
-            continue
-        raw = row.get(col)
-        if raw is not None and str(raw).strip().lower() not in ("", "nan"):
-            return str(raw).strip()
-    return None
 
 
 def collect_urls_for_rows(
@@ -118,36 +121,52 @@ def prefetch_window(
         cache = get_image_cache()
     indices = list(range(max(0, center_idx - window), min(len(df), center_idx + window + 1)))
     urls = collect_urls_for_rows(df, indices, image_candidates_map, selected_image_labels)
+    current_urls = collect_urls_for_rows(df, [center_idx], image_candidates_map, selected_image_labels)
+    _warm_urls_sync(cache, current_urls)
     cache.prefetch(urls)
+
+
+def _render_html_image(url: str) -> None:
+    safe_url = html.escape(url, quote=True)
+    st.markdown(
+        f'<img src="{safe_url}" style="width:100%;object-fit:contain" loading="eager" alt="" />',
+        unsafe_allow_html=True,
+    )
 
 
 def render_image_panel(
     urls_by_label: list[tuple[str, str | None]],
     cache: ImageCache,
-    placeholder_fn: Callable[[str], None],
-    image_fn: Callable[[bytes], None],
+    placeholder_fn=None,
+    image_fn=None,
 ) -> None:
-    """Render up to 2 images side by side in the main image panel."""
+    """Render up to 2 images side by side using browser-cached URLs when available."""
     valid = [(label, url) for label, url in urls_by_label[:2] if url]
 
+    def _placeholder(msg: str) -> None:
+        if placeholder_fn is not None:
+            placeholder_fn(msg)
+        else:
+            st.markdown(
+                f'<div class="image-placeholder">{msg}</div>',
+                unsafe_allow_html=True,
+            )
+
     if not valid:
-        placeholder_fn("No images selected or available")
+        _placeholder("No images selected or available")
         return
+
+    def _render_one(label: str, url: str) -> None:
+        _render_html_image(url)
+        if cache.get(url) is None:
+            _warm_urls_sync(cache, [url])
 
     if len(valid) == 1:
         label, url = valid[0]
-        data = cache.get(url) or cache.fetch(url)
-        if data:
-            image_fn(data)
-        else:
-            placeholder_fn(f"{label} image unavailable")
+        _render_one(label, url)
         return
 
     cols = st.columns(2, gap="small")
     for col, (label, url) in zip(cols, valid):
         with col:
-            data = cache.get(url) or cache.fetch(url)
-            if data:
-                image_fn(data)
-            else:
-                placeholder_fn(f"{label} unavailable")
+            _render_one(label, url)
